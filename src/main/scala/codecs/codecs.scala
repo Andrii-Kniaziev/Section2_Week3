@@ -77,10 +77,11 @@ trait EncoderInstances:
 
   /** An encoder for `String` values */
   given Encoder[String] =
-    ??? // TODO Implement the `Encoder[String]` instance
+    Encoder.fromFunction(s => Json.Str(s))
 
   /** An encoder for `Boolean` values */
-  // TODO Define a given value of type `Encoder[Boolean]`
+  given Encoder[Boolean] =
+    Encoder.fromFunction(b => Json.Bool(b))
 
   /**
     * Encodes a list of values of type `A` into a JSON array containing
@@ -175,13 +176,20 @@ trait DecoderInstances:
     Decoder.fromPartialFunction { case Json.Null => () }
 
   /** A decoder for `Int` values. Hint: use the `isValidInt` method of `BigDecimal`. */
-  // TODO Define a given value of type `Decoder[Int]`
+  given Decoder[Int] =
+    Decoder.fromPartialFunction { case Json.Num(bd) if bd.isValidInt => bd.toInt }
 
   /** A decoder for `String` values */
-  // TODO Define a given value of type `Decoder[String]`
+  given Decoder[String] =
+    Decoder.fromFunction(s => s match {
+      case Json.Str(st) => Some(st)
+    })
 
   /** A decoder for `Boolean` values */
-  // TODO Define a given value of type `Decoder[Boolean]`
+  given Decoder[Boolean] =
+  Decoder.fromFunction(b => b match {
+    case Json.Bool(bl) => Some(bl)
+  })
 
   /**
     * A decoder for JSON arrays. It decodes each item of the array
@@ -189,16 +197,27 @@ trait DecoderInstances:
     * if all the JSON array items are successfully decoded.
     */
   given [A] (using decoder: Decoder[A]): Decoder[List[A]] = 
-    Decoder.fromFunction {
-      ???
-    }
+    Decoder.fromFunction(arr => arr match {
+      case Json.Arr(l) => {
+        val res = l.map(decoder.decode(_))
+        if(!res.contains(None)) Some(res.map(_.get))
+        else None
+      }
+    })
 
   /**
     * A decoder for JSON objects. It decodes the value of a field of
     * the supplied `name` using the given `decoder`.
     */
   def field[A](name: String)(using decoder: Decoder[A]): Decoder[A] =
-    ???
+    Decoder.fromFunction(map => map match {
+      case Json.Obj(m) => {
+        m.get(name) match {
+          case None => None
+          case Some(jsn) => decoder.decode(jsn)
+        }
+      }
+    })
 
 
 case class Person(name: String, age: Int)
@@ -215,7 +234,9 @@ trait PersonCodecs:
 
   /** The corresponding decoder for `Person` */
   given Decoder[Person] =
-    ???
+  Decoder.field[String]("name")
+    .zip(Decoder.field[Int]("age"))
+    .transform((s, i) => Person(s, i))
 
 
 case class Contacts(people: List[Person])
@@ -223,12 +244,17 @@ case class Contacts(people: List[Person])
 object Contacts extends ContactsCodecs
 
 trait ContactsCodecs:
-
-  // TODO Define the encoder and the decoder for `Contacts`
+  
   // The JSON representation of a value of type `Contacts` should be
   // a JSON object with a single field named “people” containing an
   // array of values of type `Person` (reuse the `Person` codecs)
-  ()
+  implicit val contactsEncoder: Encoder[Contacts] =
+  ObjectEncoder.field[List[Person]]("people")
+    .transform[Contacts](contact => contact.people)
+
+  implicit val contactsDecoder: Decoder[Contacts] =
+    Decoder.field[List[Person]]("people")
+      .transform[Contacts](contact => Contacts(contact))
 
 
 // In case you want to try your code, here is a simple `Main`
@@ -245,9 +271,9 @@ object Main:
     val maybeJsonObj    = parseJson(""" { "name": "Alice", "age": 42 } """)
     val maybeJsonObj2   = parseJson(""" { "name": "Alice", "age": "42" } """)
     // Uncomment the following lines as you progress in the assignment
-    // println(maybeJsonString.flatMap(_.decodeAs[Int]))
-    // println(maybeJsonString.flatMap(_.decodeAs[String]))
-    // println(maybeJsonObj.flatMap(_.decodeAs[Person]))
-    // println(maybeJsonObj2.flatMap(_.decodeAs[Person]))
-    // println(renderJson(Person("Bob", 66)))
+    println(maybeJsonString.flatMap(_.decodeAs[Int]))
+    println(maybeJsonString.flatMap(_.decodeAs[String]))
+    println(maybeJsonObj.flatMap(_.decodeAs[Person]))
+    println(maybeJsonObj2.flatMap(_.decodeAs[Person]))
+    println(renderJson(Person("Bob", 66)))
 
